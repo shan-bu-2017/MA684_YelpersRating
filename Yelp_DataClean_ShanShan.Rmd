@@ -1,0 +1,209 @@
+---
+title: "yelp_DataCleaning"
+author: "Shan Shan"
+date: "12/07/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages("RMySQL") 
+```
+
+```{r,warning=FALSE}
+options(warning=-1)
+library(RMySQL)
+library(dplyr)
+library(tidyr)
+```
+
+```{r}
+#Read data from sql.
+mydb = dbConnect(MySQL(), user='mssp', password='mssp2017', dbname='yelp_db', host='45.63.90.29')
+user.sql <- dbSendQuery(mydb, "select * from user")
+user = fetch(user.sql, n = -1)
+
+business.sql <- dbSendQuery(mydb, "select * from business")
+business = fetch(business.sql, n = -1)
+
+review.sql <- dbSendQuery(mydb, "select business_id,user_id,stars from review")
+review = fetch(review.sql, n = -1)
+
+attribute.sql <- dbSendQuery(mydb, "select * from attribute")
+attribute = fetch(attribute.sql, n = -1)
+
+category.sql <- dbSendQuery(mydb, "select * from category")
+category = fetch(category.sql, n = -1)
+
+```
+
+```{r}
+#Extract attributes for modeling.
+
+price <- attribute%>%
+  filter(name == "RestaurantsPriceRange2")
+creditcard<-attribute%>%
+  filter(name == "BusinessAcceptsCreditCards")
+
+parking <- attribute%>%
+  filter(name == "BusinessParking")
+
+wifi <- attribute%>%
+  filter(name == "WiFi")
+TV <- attribute%>%
+  filter(name == "HasTV")
+outdoor <- attribute%>%
+  filter(name == "OutdoorSeating")
+
+alcohol <- attribute%>%
+  filter(name == "Alcohol")
+noise <- attribute%>%
+  filter(name == "NoiseLevel")
+smoking<-attribute%>%
+  filter(name == "Smoking")
+
+
+```
+
+```{r}
+
+#Join several datasets of different attributes.
+
+attribute1 <- left_join(price,creditcard,by = "business_id")
+attribute1 <- left_join(attribute1,parking, by = "business_id")
+attribute1 <- left_join(attribute1,wifi,by = "business_id")
+attribute1 <- left_join(attribute1,TV, by = "business_id")
+attribute1 <- left_join(attribute1,outdoor, by = "business_id")
+attribute1 <- left_join(attribute1,alcohol, by = "business_id")
+attribute1 <- left_join(attribute1,noise, by = "business_id")
+attribute1 <- left_join(attribute1,smoking, by = "business_id")
+
+```
+
+```{r}
+#Rename the columns' names.
+colnames(attribute1)[3] <- "pricerange"
+colnames(attribute1)[5] <- "creditcard"
+colnames(attribute1)[7] <- "parking"
+colnames(attribute1)[9] <- "wifi"
+colnames(attribute1)[11] <- "tv"
+colnames(attribute1)[13] <- "outseating"
+colnames(attribute1)[15] <- "alcohol"
+colnames(attribute1)[17] <- "noiselevel"
+colnames(attribute1)[19] <- "smoking"
+
+```
+
+```{r}
+
+#Refine the whole one dataset of attributes.
+attribute1 <- cbind(attribute1[1],attribute1[3],attribute1[5],attribute1[7],attribute1[9],attribute1[11],attribute1[13],attribute1[15],attribute1[17],attribute1[19])
+attribute1 <- na.omit(attribute1)
+
+```
+
+```{r}
+#Filter the restaurants of all the stores in 'business' dataset. 
+restaurants_filter <- category%>%
+  filter(category == "Restaurants")
+#Join the restaurants with the style of each restaurant.
+restaurants_style <- left_join(restaurants_filter, category, by = "business_id")
+#Check the number of each style 
+#restaurants_style%>%
+#  count(category.y)%>%
+#  arrange(desc(n))
+#Filter the style of each restaurant.
+restaurants_style.new <- restaurants_style%>%
+  select(business_id,category.x,category.y)%>%
+  filter(category.y == "Japanese"|category.y == "Chinese"|category.y == "Thai"|category.y == "Korean"|category.y == "Vietnamese"|category.y == "Indian")
+
+#Join the style of restaurants with restaurants' informations.
+colnames(business)[1] <- "business_id"
+restaurants <- left_join(restaurants_style.new,business, by = "business_id")
+#Clean the NA.
+restaurants_attribute1.na <- left_join(restaurants,attribute1, by = "business_id")
+restaurants_attribute1 <- na.omit(restaurants_attribute1.na)
+#Delete the useless columns.
+restaurants_attribute1$category.x <- NULL
+restaurants_attribute1$category <- NULL
+
+```
+
+
+```{r}
+#Change the column's name.
+colnames(restaurants_attribute1)[2] <- "restaurant_style"
+
+#Choose only one of several styles one restaurant may have.
+restaurants_attribute1 <- restaurants_attribute1[!duplicated(restaurants_attribute1$business_id, fromLast = T),]
+#Choose the restaurants open now.
+restaurants_attribute1 <- restaurants_attribute1%>%
+  select(everything())%>%
+  filter(is_open == 1)
+
+```
+
+
+
+```{r}
+#Set dataset for users.
+user_new <- data.frame(cbind(user$id,user$name,user$review_count,user$average_stars))
+#Rename the dataset.
+colnames(user_new) <- c("user_id","name","review_count","average_stars")
+#Join the datasets of users and reviews.
+user_review <- left_join(review,user_new,by = "user_id")
+```
+
+
+
+```{r}
+#Join the datasets of restaurants and users.
+restaurants_users <- left_join(restaurants_attribute1,user_review,by = "business_id")
+#CleanNAs.
+restaurants_users <- na.omit(restaurants_users)
+```
+
+
+```{r}
+myyelp<-restaurants_users
+myyelp$creditcard[myyelp$creditcard==0] <- 'no'
+myyelp$creditcard[myyelp$creditcard==1] <- 'yes'
+myyelp$tv[myyelp$tv==0] <- 'no'
+myyelp$tv[myyelp$tv==1] <- 'yes'
+
+myyelp$is_open[myyelp$is_open==0] <- 'no'
+myyelp$is_open[myyelp$is_open==1] <- 'yes'
+
+myyelp$noiselevel[myyelp$noiselevel=="quiet"] <- '1 quiet'
+myyelp$noiselevel[myyelp$noiselevel=="average"] <- '2 average'
+myyelp$noiselevel[myyelp$noiselevel=="loud"] <- '3 loud'
+myyelp$noiselevel[myyelp$noiselevel=="very_loud"] <- '4 very_loud'
+
+myyelp$outseating[myyelp$outseating==1]<-'yes'
+myyelp$outseating[myyelp$outseating==0]<-'no'
+```
+
+
+```{r}
+# Save the dataset in RDS file
+saveRDS(myyelp,"myyelp.rds")
+
+saveRDS(business,"business.rds")
+
+# Save the dataset in DTA file
+save(myyelp,file = "myyelp.RData")
+
+```
+
+```{r}
+mydb = dbConnect(MySQL(), user='mssp', password='mssp2017', dbname='yelp_db', host='45.63.90.29')
+review_20k.sql = dbSendQuery(mydb, "select * from review limit 20000") 
+review_20k = fetch(review_20k.sql, n = -1)   
+saveRDS(review_20k,"Textmining.rds")
+```
+
+
+

@@ -1,0 +1,980 @@
+---
+title: "Rating Factors: Which Restaurant Features Influnece Yelpers' Rating?"
+author: "Shan Shan |Supervisor:Professor Masanao Yajima"
+date: "Fall term 2017 (MA 684)"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+library(dplyr)
+library(tidyr)
+library(lme4)
+library(VGAM)
+library(ggplot2)
+library(arm)
+library(knitr)
+library(grid)
+library(gridExtra)
+library(tm)
+library(tmap)
+library(wordcloud)
+library(RColorBrewer)
+
+```
+
+```{r}
+options(warn=-1)
+```
+
+
+# Introduction
+
+> Background: People argue that "Yelpers" have written over 33 million reviews for local businesses, with some sporting more than 1,000 reviews each", and over time, Yelp's crowd-sourced reader rating system can make or break a restaurant."( Forbes, 2013). This altering demand effect has a far-reaching product promotion power. Thus researchers are inquirying and concerning "How Yelp Could Create More Accurate Reviews" and "Are Consumer Reviews Good for Business?" (HBS Working Knowledge). Following up their ideas, my project goal is to determine the key attributes and features that influnece ratings on Yelp. I use the Yelp online dataset and adopt data visualizations in conjunction with multi-level regression models to identify attributes and features correlated with Yelpers' ratings. I also used natural language processing to extract a frequency of information from review texts. 
+
+> Project Domain: consumer rating; product ratings; user-generated content 
+
+# Project Work Cycle 
+
+* __Analysis__
++ First, in order to define the data mining goals to summarize data and extract better conclusions, I analysed the online Yelp dataset provided, reviewing the most questions present in pertinent domains. In order to grab the basic variables and tasks in Yelp analysis, a brief review of the different solutions in both visualization and analytics are explored.
+
+* __Design__ 
++ In this section, I initial the project as a result of the
+analysis stage (data management), and try to find general rating and review behavior and the the influential components based on Yelp data sources.
+
+* __Development__
++ In this section, I finalize those variables with detail of each subtask with EDA.
+
+* __Validation__ 
++ In this part, I adopt the statistics regression and ANOVA analysis to approach the validation of my developed model (described in the analysis stage) 
+
+
+# I.Analysis
+
+## 1.1 Dataset and constructs
+
+> My application sources from the Yelp 2016 Dataset (https://www.yelp.com/dataset).The dataset is provided in SQL format and its data tables incluldes: businesses, reviews, tips (shorter reviews), user information and check-ins. 
+
+* __Business__: Localization(postcode, longitude, latitude,state, neighborhood,city), business category, reviews, starts and open hours
+* __Review__ : Business, users, starts, review text, date and votes
+* __User__ : User, reviews, votes, average starts, friends, antiquity, compliments and fans
+* __Tip__ : Tip text, business, user, date
+* __Check In__: Business and check in info (hours)
+
+
+## 1.2 Project domain
+
+> In this part, I try to identify the specific questions (with the associated underlying variables) that I will develop corresponds to the behavior of targeted users: restaurants and customers(yelp users).
+
+> __Restaurants__
+
+>  Features: price (the price range), payment method( accept credit or not), restaurant types, facilities (wifi, tv, outdoor,seating, parking), and environment (smoking, alcohol, noise level)
+
+>  Questions: 
+1. Is the price of the restaurant affecting the rating ?
+2. Is the food type affecting the rating ?
+3. Are the facilities, such as with TV, Wifi,etc, affecting the rating ?
+4. Is the environment affecting the rating?
+5. Is the state location affecting the rating?
+6. Is there any difference of between each state per se that influnece the rating?
+7. Is there any difference between each reviewer per se that influnece the rating? 
+
+
+> __Reviewer/Customer__
+
+>  Features: rating behavior
+
+>  Questions: 
+1. What is the configuration of the review?
+2. What is the review for each restaurant types, the price, the payment method, the environment, respectively?
+
+# II.Design
+
+## 2.1 Data Mining Goal
+
+> After the examination of the data structure and the research, I select the following dimensions of restaurants to measure the rating behavior online: price (the price range), payment method( accept credit or not), restaurant types, facilities (wifi, tv, outdoor,seating, parking), and environment (smoking, alcohol, noise level). 
+
+> The rating behavior here could be measured via "stars" and "average stars" exchangeblly.
+
+> I select the business table lists includes a restaurant’s name, location, opening hours, category, average star rating, the number of reviews about the business and a series of attributes like noise level or reservations policy: alchohol and smoking. 
+
+> The review table lists a restaurant’s star rating, the review text, the review date, and the number of votes that the review has received.The texts from those restaurants reviews will form the corpus of this project, with the text mining analysis. 
+
+# III. Development
+
+## 3.1 Data prcocessing
+
+> *Data collection
+> The data I used here is from the public dataset http://www.yelp.com/dataset_challenge .
+
+> *Transform SQL and load the data in R
+> For this purpose I used the SQL read and save in Rds objects. 
+
+> *Clean and filter the data
+
+> In the cleaning data process, I omit variables with NA value. Merge the business, reviews and categories into "myyelp.Rds" file, with the variables I need. 
+
+> *Please refer to my Yelp_DataClean.Rmd file for details.
+
+## 3.2 EDA and Visualization
+
+> * I read the prepared RDS file, use the SQL and R language to do the EDA and Visualization. 
+> * Toolket: R,SQL,NPL
+> * Package and functions: ggplot2::ggplot,RMySQL,dplyr,"tm"" is the text mining package; wordcloud(used as self-explanatory)
+
+
+```{r,warning=FALSE}
+myyelp <- readRDS("myyelp.rds")
+myyelp <- na.omit(myyelp)
+```
+
+
+```{r}
+kable(head(myyelp[,1:5]))
+```
+
+```{r}
+kable(head(myyelp[,6:10]))
+```
+
+```{r}
+kable(head(myyelp[,11:15]))
+```
+
+```{r}
+kable(head(myyelp[,16:20]))
+```
+
+## 3.2.1 Content of Yelp Reviews
+
+
+The text analysis displays the content of Yelp reviews that has the most frequency as "food" place time great as the sensitive words.It captures the holistic picture of the reviews on food types( eps. for "drink", "meat, "sandwich", "burger") and location ("place") reviews often discussed.
+
+```{r, include=FALSE}
+reviewtext<- readRDS("Textmining.rds")
+text <- reviewtext$text
+text<- iconv(text,to="utf-8-mac")
+doc <- Corpus(VectorSource(reviewtext))
+doc <- tm_map(doc, stemDocument)   
+doc <- tm_map(doc, stripWhitespace)   
+doc <- tm_map(doc, PlainTextDocument)
+doc <- tm_map(doc, removeWords, c('just', 'like', 'dont', 'get', 'one', 'amp', stopwords('english')))
+
+doc <- Corpus(VectorSource(doc))
+
+dtm <- DocumentTermMatrix(doc)   
+```
+
+
+```{r, include=FALSE}
+set.seed(200)
+brewer.pal.info
+```
+
+
+```{r, echo=FALSE}
+wordcloud(doc, max.words = 200, colors = brewer.pal(5, "Set1" ))
+```
+
+\newpage
+
+## 3.2.2 Number of Yelp Reviews
+
+```{r, echo=FALSE}
+ggplot(data=myyelp, aes(myyelp$stars.x)) + 
+  geom_histogram()+
+ggtitle("Figure 1. Number of Yelp Reviews")+theme (plot.title = element_text(size = 10))
+```
+
+Figure 1 presents that the number of Yelp Reviews shows the four-star-review occupies the largest amount reviews, approximately 16000 pieces; and we could assume the sour-star-review restaurants' popularity based on the reviews frequency; and also the possibility that consumers are attracted by these four star restaurants. The five-star reviews has the minimum amount of reviews.
+
+
+```{r}
+Chinese <- myyelp%>%
+  filter(restaurant_style == "Chinese")
+
+Japanese <- myyelp%>%
+  filter(restaurant_style == "Japanese")
+
+Korean <- myyelp%>%
+  filter(restaurant_style == "Korean")
+
+Thai <- myyelp%>%
+  filter(restaurant_style == "Thai")
+
+Vietnamese <- myyelp%>%
+  filter(restaurant_style == "Vietnamese")
+Indian <- myyelp%>%
+  filter(restaurant_style == "Indian")
+
+```
+
+
+## 3.2.3 Restaurants rating amount by type
+
+```{r}
+par(mfrow=c(2,3))
+hist.1 <- hist(Chinese$stars.x)
+hist.2 <- hist(Japanese$stars.x)
+hist.3 <- hist(Korean$stars.x)
+hist.4 <- hist(Thai$stars.x)
+hist.5 <- hist(Indian$stars.x)
+```
+
+The figures of 3.2.3 display that the rating distribution varied through restaurants type. I examine five types of restaurants: Japanese, Chinese, Korean, Thai and Indian. Among them, in regards to the highest five-star reviews, Japanese ranks the first, and Chinese restaurants are the second. Of the four-star reviews has the same rating distribution: Japanese restaurants and Thai restaurants have the most substantial rating amount as around 5000, and Chinese reaches 4000 as well. From such observations, we could assume the connection between the rating behavior and the restaurant types.
+
+\newpage
+## 3.2.4 Distribution of average stars of restaurants by states
+
+```{r}
+ggplot(data=myyelp, aes(x=pricerange, y=stars.x))+geom_jitter()+
+ggtitle("Figure2. Number of Restaurant Review by State")+ylab("number of restaurant reviews")+facet_grid(~state)+theme (plot.title = element_text(size = 11))
+```
+
+### __Rating and restaurat type by states__
+
+Physically, restaurants have the "space" and "field", thus, the geographic location should be considered. As in my analysis question, I consider the domain of the "restaurants" and regard the "state" variable as a potential influence. Is there any state-influence that effects consumer rating? The figure above presents indicates the geolocation of the business reviews come from. Based on the location, we could assume the restaurants that traced by Yelp are clustered in the northeast part and the southwest part as presented: NV, OH, OR, PA, AZ, have the wide rating actions. Within each state, the rank of stars are also varied: AZ's restaurants' evaluation are comparatively has a 4-star-level, NV has four stars, ON has 3-4 star-level frequently.
+
+
+\newpage
+## 3.2.5 Price Range and Rating
+
+```{r}
+ggplot(data=myyelp, aes(x=myyelp$stars.x, fill=pricerange))+geom_bar(position = "fill")+
+ggtitle("Figure3. Price Range")+theme (plot.title = element_text(size = 11))
+```
+
+
+###__Price range and rating__
+
+Price range's interaction with the rating is discussed above. Price range as 2 is most welcomed with the high rating. Some price range 4 (the higher price range one) generally has the review among 3-4. Price-range 3 has the lower rating below 3 stars. Thus, generally, to speak, people prefer the lower price range.
+
+\newpage
+## 3.2.5 Price Range and Rating by state
+
+```{r}
+ggplot(data=myyelp, aes(x=myyelp$stars.x, fill=pricerange))+geom_bar(position = "fill")+
+ggtitle("Figure4. Price Range by state")+facet_grid(~state)+theme (plot.title = element_text(size = 11))
+```
+
+
+### __Price Range and rating by state__
+
+Zoom into each state; the similar rating pattern displayed: consumer like lower price range, particularly price-range 2. 
+
+\newpage
+## 3.2.6 Payment Method and Rating
+
+```{r}
+ggplot(data=myyelp, aes(x=myyelp$stars.x, fill=creditcard))+geom_bar(position = "fill")+
+ggtitle("Figure5.Credit Card Acceptance")+theme (plot.title = element_text(size = 11))
+```
+
+### __Payment method and rating behavior__
+
+Figure 5 shows most restaurants adopt the credit card accepted. 
+
+\newpage
+## 3.2.6 Payment Method and Rating by state
+
+```{r}
+ggplot(data=myyelp, aes(x=myyelp$stars.x, fill=creditcard))+geom_bar(position = "fill")+
+ggtitle("Figure6.Credit Card Acceptance by State")+facet_grid(~state)+theme (plot.title = element_text(size = 11))
+```
+
+### __Payment method and rating behavior by state__
+
+Figure 6 displays the similar phenomenon within the states (like BW, WI). However, if the payment method is a common thing and could not tell the difference between each restaurant, then, it is hard to say that it will influence the rating. 
+
+\newpage
+
+## 3.2.7 Wifi and Rating
+
+```{r}
+ggplot(data=myyelp, aes(x=myyelp$stars.x, fill=wifi))+geom_bar(position = "fill")+
+ggtitle("Figure7. Facility: Wifi and Rating")+theme (plot.title = element_text(size = 11))
+```
+
+### __Wifi and rating__
+
+Figure 7: Restaurants with free wifi have more higher level reviews amount than wifi without free wifi.
+
+## 3.2.7 Wifi and Rating by state
+
+```{r}
+ggplot(data=myyelp, aes(x=myyelp$stars.x, fill=wifi))+geom_bar(position = "fill")+
+ggtitle("Figure8. Wifi and Rating by State") +facet_grid(~state)+theme (plot.title = element_text(size = 11))
+```
+
+
+### __Wifi and rating behavior by states__
+
+Fig 8: Within each state, the similar situations happened in OH, WI, NC states: restaurants with free wifi has higher level reviews amount than wifi without free wifi.  
+\newpage
+
+
+## 3.2.8 Rating and Parking
+
+```{r}
+
+ggplot(data=myyelp, aes(x=stars.x, fill=myyelp$parking),width =0.5)+geom_histogram()+
+ggtitle("Figure9. Rating and Parking")+theme (plot.title = element_text(size = 11))
+
+```
+
+
+### __Rating and Parking__
+
+Among the parking types, "lot" parking is the most popular rated one in all five categories. The parking type as garage and valet seems to relate to low rating level. However, this observation needs to be further discussed and tested, as parking and without parking is the first condition; and within "has parking", what is the different influences of each parking type?
+
+\newpage
+
+## 3.2.9 Rating and TV facility
+
+```{r}
+ggplot(data=myyelp, aes(x=stars.x, fill=tv))+geom_histogram()+
+ggtitle("Figure10.Review and TV")+theme (plot.title = element_text(size = 11))
+```
+
+### __Rating and TV__
+
+It seems that restaurants with TV and without TV have no significant influence towards the reviews. But generally to speak, at the low-level rating (below three-star-rating), the no-tv phenomenon is visible. 
+
+\newpage
+
+## 3.2.9 Rating and TV facility by state
+
+```{r}
+ggplot(data=myyelp, aes(x=stars.x, fill=tv),with=1)+geom_histogram()+
+ggtitle("Figure11.Review and TV by state")+facet_grid(~state)+theme (plot.title = element_text(size = 11))
+```
+
+
+### __Review and TV by state__
+
+It seems the rating and TV have no obvious relation within states as well: only NV and ON, AZ presents specific patterns, other states' situation is not apparent. 
+
+
+\newpage
+
+## 3.2.10 Rating and Outseating
+
+```{r}
+ggplot(data=myyelp, aes(x=myyelp$stars.x, fill=outseating))+geom_bar(position = "fill")+
+ggtitle("Figure12.Rating and Outseating")+theme (plot.title = element_text(size = 11))
+```
+
+
+### __Rating and Outseating__
+
+Restaurant with out eating or not does not influence too much of the restaurant rating.
+
+\newpage
+## 3.2.10 Rating and Outseating
+
+```{r}
+ggplot(data=myyelp, aes(x=myyelp$stars.x, fill=outseating))+geom_bar(position = "fill")+
+ggtitle("Figure13.Rating and Outseating")+facet_grid(~state)+theme (plot.title = element_text(size = 11))
+```
+
+### __Rating and Outseating by state__
+
+Though, restaurant with out eating or not does not influence too much of the restaurant rating. However, the state has some influence on the evaluation that considerably change the pattern of the rating behavior. For instance, in NV it seems that higher restaurant could have no out seating, while in NC it seems that restaurant ranking has a positive trend with the out seating. 
+
+\newpage
+
+## 3.2.11 Rating and Noise Level 
+
+```{r}
+ggplot(data=myyelp, aes(x=stars.x, fill=noiselevel))+geom_histogram()+
+ggtitle("Figure 14.Rating and Noise Level")+theme (plot.title = element_text(size = 11))
+```
+
+### __Rating and noise level__
+
+It seems the average noise level has the highest amount in both top rating and low rating. Relatively to speak, restaurant with average noise level seems to obtain the higher rating. However, we need to think about the specific restaurant types: such as bars or a fine dinner. 
+
+\newpage
+## 3.2.11 Rating and Noise Level by state
+
+```{r}
+ggplot(data=myyelp, aes(x=stars.x, fill=noiselevel))+geom_histogram()+
+ggtitle("Figure 15.Rating and Noise Level by state")+facet_grid(~state)+theme (plot.title = element_text(size = 11))
+```
+
+### __Rating and noise level by state__
+
+Within the state, relatively to speak, restaurant with average noise level seems to obtain the higher rating. Still, we need to think about the specific restaurant types: such as bars or a fine dinner. 
+
+\newpage
+
+## 3.2.12 Rating and Alcohol 
+
+```{r}
+ggplot(data=myyelp, aes(x=myyelp$stars.x, fill=alcohol))+geom_bar(position = "fill")+
+ggtitle("Figure 16.Rating and Alcohol")+theme (plot.title = element_text(size = 11))
+```
+
+
+### __Rating and alcohol level__
+
+From the rating figure, it seems that full_bar is the most popular one among the yelp reviewers. However, does this character relates to the individual preference? Perhaps, the reviewers on the Yelp, happens to be the persons who enjoy the alcohol. For those that happen to enjoy the non-alcohol restaurant does not participate in the rating. Also, people with the religious practice such as Muslim, they do not drink alcohol. The figure may indicate that people that do not drink alcohol or do not like alcohol might not participate in the rating. Or perhaps, they are the person who relates to the "nono-alcohol" in the 4.5-star level rating.
+
+\newpage
+## 3.2.12 Rating and Alcohol by state
+
+```{r}
+ggplot(data=myyelp, aes(x=myyelp$stars.x, fill=alcohol))+geom_bar(position = "fill")+ggtitle ("Figure 17.Rating and alcohol by state")+theme(plot.title = element_text(size = 11))+facet_grid(~state)
+```
+
+
+### Rating and alcohol by state
+
+
+When observing each state, the change of the pattern of alcohol and rating indicates that state might influence this relationship. For instance, IL has the obvious "none-alcohol" restaurant with the relatively larger proportion of four stars comparing with "beer" and "full_bar" types. Other states such as QC, WI, BW seems to prefer the "full_bar" types. Therefore, the above discussed individual preference should be considered as well. 
+
+\newpage
+
+## 3.2.13 Rating and Smoking
+
+```{r}
+ggplot(data=myyelp, aes(x=myyelp$stars.x, fill=smoking))+geom_bar(position = "fill")+
+ggtitle("Figure 18.Rating and Smoking")+theme (plot.title = element_text(size = 11))
+```
+
+### __Rating and smoking__
+
+Smoking seems to have the positive relationship with restaurants ranking: "No smoking"" restaurants have the higher rank than the rest.
+
+\newpage
+
+## 3.2.13 Rating and Smoking by state
+
+```{r}
+ggplot(data=myyelp, aes(x=myyelp$stars.x, fill=smoking))+geom_bar(position = "fill")+
+ggtitle("Figure 19.Rating and Smoking by state")+theme (plot.title = element_text(size = 11))+
+  
+  facet_grid(~state)
+```
+
+### __Rating and smoking by state__
+
+This phenomenon that "No smoking" restaurants have the higher rank than the rest is more evident within each state, except for AZ which prefer outdoor smoking, the rest states' restaurants have the apparent positive rating of no-smoking restaurants. 
+
+
+## 3.2 Summary of Proeject Development Stage
+
+* 1. A set of restaurants' variables and their relations with the rating has been visualized
+* 2. Price range is a common phenomenon and could not influence too much at the state level. Thus this variable has been removed for validation. The credit card has the similar issue. 
+* 3. EDA presents that "state" has the random effect that influences: smoking restaurant type, wifi, alcohol, smoking, outskating and noise level.
+* 4. EDA presents that "individual" has the random effect that influences constructs such as alcohol, noise level.
+
+
+# IV. Validation: the statistical model selection 
+
+## Why use multi-level model 
+
+As a random effects model assumes that the data being analyzed are drawn from a hierarchy of different populations whose differences relate to that hierarchy. In my Yelp project, the rating behavior is embedded in the state, geographically, and each identity, physically. Thus, I use the random effects model to shed light on the high-level context. Among the random effects model, I choose the random intercepts model, which is equivalent to assume that the correlation between two distance measurements (at state j,k such that j not equal to k)  for the same subject (i) is constant no matter what the difference between state j and state k. 
+
+
+## 4.1. Model fitting (stepwise selection)
+
+### Model1  linear regression (full model) 
+
+
+$Stars_{[i]} = \beta_0 + \beta_1 restaurant_style_i + \beta_2 wifi_i + \beta_3 tv_i + \beta_4 Parking_i + \beta_5 outseating_i + \beta_6 noiselevel_i + \beta_7 alcohol_i + \beta_8 smoking_i + \beta_9 state_i+\epsilon_i$
+
+
+```{r}
+
+model1 <- glm(myyelp$stars.x ~restaurant_style + wifi +tv+ parking+outseating+noiselevel+alcohol+smoking+state, data = myyelp)
+
+```
+
+### Model2 linear regression within state effect
+
+$Stars_{[i]} = \beta_0 + \beta_1 restaurant_style_i + \beta_2 wifi_i + \beta_3 tv_i + \beta_4 Parking_i + \beta_5 outseating_i + \beta_6 noiselevel_i + \beta_7 alcohol_i + \beta_8 smoking_i + \beta_9 State_{j[i]}+\epsilon_i$
+
+```{r}
+model2 <- lmer(stars.x ~restaurant_style + wifi +tv+ parking+outseating+noiselevel+alcohol+smoking+(1|state), data = myyelp)
+
+```
+
+```{r}
+model2_coef<-data.frame(model2@beta)
+model2_se<-data.frame(sqrt(diag(vcov(model2))))
+model2_hat<-fitted.values(model2)
+model2_rse<-resid(model2)
+```
+
+
+### Model3: consider the random effect within the state and user effect
+
+$Stars_{[i]} = \beta_0 + \beta_1 restaurant_style_i + \beta_2 wifi_i + \beta_3 tv_i + \beta_4 Parking_i + \beta_5 outseating_i + \beta_6 noiselevel_i + \beta_7 alcohol_i + \beta_8 smoking_i + \beta_9 State_{j[i]}+\beta_10 user_{j[i]}+\epsilon_i$
+
+```{r}
+model3 <- lmer(myyelp$stars.x ~restaurant_style+wifi+tv+parking+outseating+noiselevel+alcohol+smoking+(1|state)+(1|user_id), data = myyelp)
+
+```
+
+```{r}
+model3_coef<-data.frame(model3@beta)
+model3_se<-data.frame(sqrt(diag(vcov(model3))))
+model3_hat<-fitted.values(model3)
+model3_rse<-resid(model3)
+```
+
+
+### Model4 the random effect within the state and user effect, and their interaction effect
+
+$Stars_{[i]} = \beta_0 + \beta_1 restaurant_style_i + \beta_2 wifi_i + \beta_3 tv_i + \beta_4 Parking_i + \beta_5 outseating_i + \beta_6 noiselevel_i + \beta_7 alcohol_i + \beta_8 smoking_i + \beta_9 State_{j[i]}+\beta_10 user:State_{j[i]}+\epsilon_i$
+
+```{r}
+
+model4 <- lmer(myyelp$stars.x~myyelp$restaurant_style+ wifi+tv+parking+outseating+noiselevel+alcohol+smoking+(1|state)+(1|state:user_id),data = myyelp)
+
+```
+
+```{r}
+model4_coef<-data.frame(model4@beta)
+model4_se<-data.frame(sqrt(diag(vcov(model4))))
+model4_hat<-fitted.values(model4)
+model4_rse<-resid(model4)
+```
+
+
+## 4.2. Model Checking
+
+
+```{r}
+par(mfrow=c(1,2))
+plot(fitted(model1),resid(model1,type="pearson"),main="Figure4.1.1ResidualPlot(model1)",cex.main=0.8)
+
+qqnorm(resid(model1),main="Figure 4.1.1 NormalQQ-Plot(model1)",cex.main=0.8)
+```
+
+```{r}
+binnedplot(model2_hat,model2_rse, main = "Figure4.2. Binned residual plot(model2)",cex.main=0.8)
+binnedplot(model3_hat,model3_rse, main = "Figure4.3. Binned residual plot(model3)",cex.main=0.8)
+binnedplot(model4_hat,model4_rse, main = "Figure4.4. Binned residual plot(model4)",cex.main=0.8)
+```
+
+
+Figure4.1.1 to figure4.4 capture the residual for each model. Basically, for model 2, model 3 and model 4 the residual plots look relatively good since most residuals are within -0.5,0.5 range and the plots are symmetrical. The model 3 with the state intercept variance alone seems to be better than model 2 and model 4, since its fluctuation is not that much and do not display a kind of "scatter" below -0.5 line: that is to say, except several point residuals "fan out" from left to right the most are spread around the residual = 0 line on the right side. Thus, in regards to the residuals plot, model 3 seems to have the relatively good fitness. 
+
+
+### 4.3. Compare the coefficients 
+
+```{r}
+
+coefs <- cbind(model2_coef,model3_coef,model4_coef)
+rownames(coefs) <- c("Intercept","restaurant_Indian","restaurant_Japanese","restaurant_Korean","restaurant_Thai","restaurant_Vietnamese","no-wifi","have tv","parking_valet","parking_lot","parking_lot and valet","parking_street","parking_street and valet","parking_street and lot","parking_garage","parking_garage and valet","parking_garage and lot and valet","parking_garage and street","parking_garage and street and valet","outseating_yes","average noise","loud","very_loud","alcoholfull_bar","alcohol_none","smoking_outdoor","smoking_yes" )
+
+```
+
+#### Table 4.3 Coefficients Table
+
+```{r}
+kable(coefs)
+```
+
+Comparing the coefficients of each model in the coefficients' table, we could find:
+
+> For restaurant style, comparing with Chinese restaurant (baseline), Japanese restaurant has a 0.28 stars rating higher than Chinese
+
+> For Wifi variable, the models show no-wifi decreases 0.004 of stars compared to restaurants with free WiFi.
+
+> For TV variable, the regression models  show that "with TV" increases 0.05 of stars compared to restaurants without TV.
+
+> For variables of parking, restaurants who have valet, street parking, parking lot, garage and street parking, street and lot parking,garage and street and valet parking tend to have higher ratings than without these conditions especially, while the restaurants with lot and valet parking, garage and valet parking, garage and lot and valet parking tend to have lower ratings than restaurants without these parking conditions
+
+> For "with out-seating" variable, the three model consistently shows that it has very small influence towards restaurant rating. 
+
+> For the "noise level", the baseline is quiet level, the coefficients of the models present that some kind of louder noise level could lead to having higher rating comparing with quiet level restaurant; however, the very loud noise has an apparent negative influence towards the restaurant rating: the very-loud noise level decreases 0.19 of rating.
+
+> For alcohol variable with baseline "beer_and_wine", restaurants with bar leads to the decrease of 0.04 point of rating comparing with beer_and_wine; non-alcohol could increase 0.41 point of rating comparing with beer_and_wine.
+
+> For variable smoking with baseline "no-smoking", both outdoor and "could smoking" leads to the decrease of rating, comparing with "no-smoking". Thus, smoking has a negative influence on restaurant rating. 
+
+
+## 4.4. Confidence interval: hypothesis testing
+
+```{r}
+model1.1<- data.frame(summary(model1)$coef)
+model1.1$c1 <- c("Intercept","restaurant_Indian","restaurant_Japanese","restaurant_Korean","restaurant_Thai","restaurant_Vietnamese","no-wifi","have tv","parking_valet","parking_lot","parking_lot and valet","parking_street","parking_street and valet","parking_street and lot","parking_garage","parking_garage and valet","parking_garage and lot and valet","parking_garage and street","parking_garage and street and valet","outseating_yes","average noise","loud","very_loud","alcoholfull_bar","alcohol_none","smoking_outdoor","smoking_yes","stateBW","stateIL","stateNC","stateNV","stateOH","stateON","statePA","stateQC","stateWI")
+colnames(model1.1)[1] <- "coefficients"
+colnames(model1.1)[2] <- "se"
+model1.1$ymin <- model1.1$coefficients - 1.96*model1.1$se
+model1.1$ymax <- model1.1$coefficients + 1.96*model1.1$se
+
+```
+
+
+```{r}
+p1 <- ggplot(model1.1,aes(x=c1, y=coefficients, ymin= ymin,ymax= ymax)) + geom_pointrange(colour=ifelse(model1.1$ymin < 0 & model1.1$ymax > 0, "red", "grey")) + theme_bw()  + coord_flip()  + xlab('Variables') + ylab('') + geom_hline(yintercept = 0, color = "red") + labs(title = "Figure 4.5 Model1: Coefficients and 95% Confidence Interval",cex.main=0.5)
+p1
+```
+
+Fig 4.5 :The confidence interval of the combined effect size in Figure 4.5 include zero, i.e. in case of a confidence level of 95% the p-value is smaller than .05. In traditional terminology, this means that the meta-analytic effect is not statistically significant. Specifically, from figure4.5 Model1 presents the 95% confidence interval each coefficients, and whether it includes the point zero where the vertical red line is the line of y = 0. Visually, "parking_garage and valet", "outseating_yes", "no-wifi" and "loud" might not significant since its confidence interval includes 0 but rest of the variables are significant at level 5%. 
+
+
+```{r}
+model2.1<- data.frame(summary(model2)$coef)
+model2.1$c1 <- c("Intercept","restaurant_Indian","restaurant_Japanese","restaurant_Korean","restaurant_Thai","restaurant_Vietnamese","no-wifi","have tv","parking_valet","parking_lot","parking_lot and valet","parking_street","parking_street and valet","parking_street and lot","parking_garage","parking_garage and valet","parking_garage and lot and valet","parking_garage and street","parking_garage and street and valet","outseating_yes","average noise","loud","very_loud","alcoholfull_bar","alcohol_none","smoking_outdoor","smoking_yes" )
+colnames(model2.1)[1] <- "coefficients"
+colnames(model2.1)[2] <- "se"
+model2.1$ymin <- model2.1$coefficients - 1.96*model2.1$se
+model2.1$ymax <- model2.1$coefficients + 1.96*model2.1$se
+
+```
+
+
+```{r}
+p2 <- ggplot(model2.1,aes(x=c1, y=coefficients, ymin= ymin,ymax= ymax)) + geom_pointrange(colour=ifelse(model2.1$ymin < 0 & model2.1$ymax > 0, "red", "grey")) + theme_bw()  + coord_flip()  + xlab('Variables') + ylab('') + geom_hline(yintercept = 0, color = "red") + labs(title = "Figure 4.6 Model2: Coefficients and 95% Confidence Interval",cex.main=0.5)
+p2
+```
+
+Fig 4.6: The confidence interval of the combined effect size in Figure 4.6 include zero, i.e. in case of a confidence level of 95% the p-value is smaller than .05. Specifically, from figure 4.6 Model2 presents the 95% confidence interval each coefficients, and whether it includes the point zero where the vertical red line is the line of y = 0.Visually, Model 2 and Model 1 has the same result: "parking_garage and valet" "outseating_yes", "no-wifi"and "loud" might not significant since its confidence interval includes 0 but rest of the variables are significant at level 5%. 
+
+
+```{r}
+model3.1<- data.frame(summary(model3)$coef)
+model3.1$c1 <- c("Intercept","restaurant_Indian","restaurant_Japanese","restaurant_Korean","restaurant_Thai","restaurant_Vietnamese","no-wifi","have tv","parking_valet","parking_lot","parking_lot and valet","parking_street","parking_street and valet","parking_street and lot","parking_garage","parking_garage and valet","parking_garage and lot and valet","parking_garage and street","parking_garage and street and valet","outseating_yes","average noise","loud","very_loud","alcoholfull_bar","alcohol_none","smoking_outdoor","smoking_yes" )
+colnames(model3.1)[1] <- "coefficients"
+colnames(model3.1)[2] <- "se"
+model3.1$ymin <- model3.1$coefficients - 1.96*model3.1$se
+model3.1$ymax <- model3.1$coefficients + 1.96*model3.1$se
+
+```
+
+```{r}
+p3 <- ggplot(model3.1,aes(x=c1, y=coefficients, ymin= ymin,ymax= ymax)) + geom_pointrange(colour=ifelse(model3.1$ymin < 0 & model3.1$ymax > 0, "red", "grey")) + theme_bw()  + coord_flip()  + xlab('Variables') + ylab('') + geom_hline(yintercept = 0, color = "red") + labs(title = "Figure 4.7 Model3: Coefficients and 95% Confidence Interval")
+p3
+```
+
+Fig 4.7: The confidence interval of the combined effect size in Figure 4.6 include zero, i.e., in case of a confidence level of 95% the p-value is smaller than .05. Specifically, from figure4.6 Model2 presents the 95% confidence interval each coefficients, and whether it includes the point zero where the vertical red line is the line of y = 0.Visually, Model 3 and Model 2 and Model 1 have the same result: "parking_garage and valet", "outseating_yes", "no-wifi" and "loud" might not significant since its confidence interval includes 0 but rest of the variables are significant at level 5%. 
+
+
+
+```{r}
+model4.1<- data.frame(summary(model4)$coef)
+model4.1$c1 <- c("Intercept","restaurant_Indian","restaurant_Japanese","restaurant_Korean","restaurant_Thai","restaurant_Vietnamese","no-wifi","have tv","parking_valet","parking_lot","parking_lot and valet","parking_street","parking_street and valet","parking_street and lot","parking_garage","parking_garage and valet","parking_garage and lot and valet","parking_garage and street","parking_garage and street and valet","outseating_yes","average noise","loud","very_loud","alcoholfull_bar","alcohol_none","smoking_outdoor","smoking_yes" )
+colnames(model4.1)[1] <- "coefficients"
+colnames(model4.1)[2] <- "se"
+model4.1$ymin <- model2.1$coefficients - 1.96*model4.1$se
+model4.1$ymax <- model2.1$coefficients + 1.96*model4.1$se
+
+```
+
+```{r}
+p4 <- ggplot(model4.1,aes(x=c1, y=coefficients, ymin= ymin,ymax= ymax)) + geom_pointrange(colour=ifelse(model4.1$ymin < 0 & model4.1$ymax > 0, "red", "grey")) + theme_bw()  + coord_flip()  + xlab('Variables') + ylab('') + geom_hline(yintercept = 0, color = "red") + labs(title = "Figure 4.8 Model4: Coefficients and 95% Confidence Interval")
+p4
+```
+
+Fig 4.8: Visually, Model4 alongside Model3 and Model2 and Model1 have the same result "parking_garage and valet" "outseating_yes", "no-wifi" and "loud" might not significant since its confidence interval includes 0 but rest of the variables are significant at level 5%. 
+
+
+## 4.5 Abridged Models
+
+Based on the multi-level regression and the CI hypothesis testing, I decide to remove the "parking", "with wifi" and "outseating" variables and form abridged models as follows. 
+
+### Model 5: linear regression with fixed effect
+
+$Stars_{[i]} = \beta_0 + \beta_1 restaurant_style_i + \beta_2 tv_i + \beta_3 noiselevel_i + \beta_4 alcohol_i + \beta_5 smoking_i + \beta_6 State_i+ \epsilon_i$
+
+
+```{r}
+
+model5 <- glm(myyelp$stars.x ~restaurant_style +tv+noiselevel+alcohol+smoking+state, data = myyelp)
+
+```
+
+
+### Model 6: Random effect within state
+
+$Stars_{[i]} = \beta_0 + \beta_1 restaurant_style_i + \beta_2 tv_i + \beta_3 noiselevel_i + \beta_4 alcohol_i + \beta_5 smoking_i + \beta_6 State_{j[i]}+ \epsilon_i$
+
+```{r}
+model6 <- lmer(stars.x ~restaurant_style +tv+noiselevel+alcohol+smoking+(1|state), data = myyelp)
+```
+
+```{r}
+model6_coef<-data.frame(model6@beta)
+model6_se<-data.frame(sqrt(diag(vcov(model6))))
+model6_hat<-fitted.values(model6)
+model6_rse<-resid(model6)
+```
+
+
+### Model7: The random effect within the state and the user 
+
+$Stars_{[i]} = \beta_0 + \beta_1 restaurant_style_i  + \beta_2 tv_i + \beta_3 noiselevel_i + \beta_4 alcohol_i + \beta_5 smoking_i + \beta_6 State_{j[i]}+\beta_7 user_{j[i]}+ \epsilon_i$
+
+```{r}
+model7 <- lmer(myyelp$stars.x ~restaurant_style+tv+noiselevel+alcohol+smoking+(1|state)+(1|user_id), data = myyelp)
+```
+
+```{r}
+model7_coef<-data.frame(model7@beta)
+model7_se<-data.frame(sqrt(diag(vcov(model7))))
+model7_hat<-fitted.values(model7)
+model7_rse<-resid(model7)
+```
+
+### Model8 The random effect within the state,the user and user and state interaction effect
+
+$Stars_{[i]} = \beta_0 + \beta_1 restaurant_style_i + \beta_2 tv_i + \beta_3 noiselevel_i + \beta_4 alcohol_i + \beta_5 smoking_i + \beta_6 State_{j[i]}+\beta_7 user_{j[i]} + \beta_8 business_{j[i]}+ \beta_9  user:State_{j[i]}+\epsilon_i$
+
+```{r}
+model8 <- lmer(myyelp$stars.x~restaurant_style+tv+noiselevel+alcohol+smoking+(1|state)+(1|user_id)+(1|state:user_id), data = myyelp)
+
+```
+
+```{r}
+model8_coef<-data.frame(model8@beta)
+model8_se<-data.frame(sqrt(diag(vcov(model8))))
+model8_hat<-fitted.values(model8)
+model8_rse<-resid(model8)
+```
+
+
+
+## 4.6 Abrridged Models Checking 
+
+
+```{r}
+par(mfrow=c(1,2))
+plot(fitted(model5),resid(model1,type="pearson"),main="Figure5.1.1ResidualPlot(model5)",cex.main=0.8)
+
+qqnorm(resid(model5),main="Figure 5.1.2 NormalQQ-Plot(model5)",cex.main=0.8)
+
+```
+
+```{r}
+binnedplot(model6_hat,model6_rse, main = "Figure. Binned residual plot(model6)",cex.main=0.8)
+binnedplot(model7_hat,model7_rse, main = "Figure. Binned residual plot(model7)",cex.main=0.8)
+binnedplot(model8_hat,model8_rse, main = "Figure. Binned residual plot(model8)",cex.main=0.8)
+```
+
+
+## 4.7. Compare the coefficients table
+
+```{r}
+coefs <- cbind(model6_coef,model7_coef,model8_coef)
+rownames(coefs) <- c("Intercept","restaurant_Indian","restaurant_Japanese","restaurant_Korean","restaurant_Thai","restaurant_Vietnamese","have tv","average noise","loud","very_loud","alcoholfull_bar","alcohol_none","smoking_outdoor","smoking_yes" )
+
+kable(coefs)
+```
+
+
+Comparing the coefficients of each abridged model in the coefficients' table, we could find: 
+
+> For restaurant style, comparing with Chinese restaurant (baseline), Japanese restaurant has a 0.23 stars rating higher than Chinese
+
+> For TV variable, the regression models  show that "with TV" increases 0.07 of stars compared to restaurants without TV; slightly larger comparing with former coefficients table
+
+> For the "noise level", the baseline is quiet level, the coefficients of the models present that some kind of louder noise level could lead to having higher rating comparing with quiet level restaurant; however, the very loud noise has an apparent negative influence towards the restaurant rating: the very-loud noise level decreases 0.13 of rating; slightly smaller comparing un-abridged models.
+
+> For alcohol variable with baseline "beer_and_wine", restaurants with bar leads to the decrease of 0.18 point of rating comparing with beer_and_wine. This is larger than previous results. In addition, non-alcohol could increase 0.3 point of rating comparing with beer_and_wine; similar to previous one.
+
+> For variable smoking with baseline "no-smoking", both outdoor and "could smoking" leads to the decrease of rating, comparing with "no-smoking". Thus, smoking has a negative influence on restaurant rating. This is same to the previous observation.
+
+
+
+## 4.8. Check the significance of coefficients 
+
+```{r}
+model5.1<- data.frame(summary(model5)$coef)
+model5.1$c1 <- c("Intercept","restaurant_Indian","restaurant_Japanese","restaurant_Korean","restaurant_Thai","restaurant_Vietnamese","have tv","average noise","loud","very_loud","alcoholfull_bar","alcohol_none","smoking_outdoor","smoking_yes","stateBW","stateIL","stateNC","stateNV","stateOH","stateON","statePA","stateQC","stateWI" )
+colnames(model5.1)[1] <- "coefficients"
+colnames(model5.1)[2] <- "se"
+model5.1$ymin <- model5.1$coefficients - 1.96*model5.1$se
+model5.1$ymax <- model5.1$coefficients + 1.96*model5.1$se
+
+```
+
+
+```{r}
+p5 <- ggplot(model5.1,aes(x=c1, y=coefficients, ymin= ymin,ymax= ymax)) + geom_pointrange(colour=ifelse(model5.1$ymin < 0 & model5.1$ymax > 0, "red", "grey")) + theme_bw()  + coord_flip()  + xlab('Variables') + ylab('') + geom_hline(yintercept = 0, color = "red") + labs(title = "Model5: Coefficients and 95% Confidence Interval")
+p5
+```
+
+
+```{r}
+model6.1<- data.frame(summary(model6)$coef)
+model6.1$c1 <- c("Intercept","restaurant_Indian","restaurant_Japanese","restaurant_Korean","restaurant_Thai","restaurant_Vietnamese","have tv","average noise","loud","very_loud","alcoholfull_bar","alcohol_none","smoking_outdoor","smoking_yes")
+colnames(model6.1)[1] <- "coefficients"
+colnames(model6.1)[2] <- "se"
+model6.1$ymin <- model6.1$coefficients - 1.96*model6.1$se
+model6.1$ymax <- model6.1$coefficients + 1.96*model6.1$se
+
+```
+
+
+```{r}
+p6 <- ggplot(model6.1,aes(x=c1, y=coefficients, ymin= ymin,ymax= ymax)) + geom_pointrange(colour=ifelse(model6.1$ymin < 0 & model6.1$ymax > 0, "red", "grey")) + theme_bw()  + coord_flip()  + xlab('Variables') + ylab('') + geom_hline(yintercept = 0, color = "red") + labs(title = "Model1: Coefficients and 95% Confidence Interval")
+p6
+```
+
+
+```{r}
+model7.1<- data.frame(summary(model7)$coef)
+model7.1$c1 <- c("Intercept","restaurant_Indian","restaurant_Japanese","restaurant_Korean","restaurant_Thai","restaurant_Vietnamese","have tv","average noise","loud","very_loud","alcoholfull_bar","alcohol_none","smoking_outdoor","smoking_yes" )
+colnames(model7.1)[1] <- "coefficients"
+colnames(model7.1)[2] <- "se"
+model7.1$ymin <- model7.1$coefficients - 1.96*model7.1$se
+model7.1$ymax <- model7.1$coefficients + 1.96*model7.1$se
+
+```
+
+```{r}
+p7 <- ggplot(model7.1,aes(x=c1, y=coefficients, ymin= ymin,ymax= ymax)) + geom_pointrange(colour=ifelse(model7.1$ymin < 0 & model7.1$ymax > 0, "red", "grey")) + theme_bw()  + coord_flip()  + xlab('Variables') + ylab('') + geom_hline(yintercept = 0, color = "red") + labs(title = "Model7: Coefficients and 95% Confidence Interval")
+p7
+```
+
+
+
+```{r}
+model8.1<- data.frame(summary(model8)$coef)
+model8.1$c1 <- c("Intercept","restaurant_Indian","restaurant_Japanese","restaurant_Korean","restaurant_Thai","restaurant_Vietnamese","have tv","average noise","loud","very_loud","alcoholfull_bar","alcohol_none","smoking_outdoor","smoking_yes" )
+colnames(model8.1)[1] <- "coefficients"
+colnames(model8.1)[2] <- "se"
+model8.1$ymin <- model8.1$coefficients - 1.96*model8.1$se
+model8.1$ymax <- model8.1$coefficients + 1.96*model8.1$se
+
+```
+
+```{r}
+p8 <- ggplot(model8.1,aes(x=c1, y=coefficients, ymin= ymin,ymax= ymax)) + geom_pointrange(colour=ifelse(model8.1$ymin < 0 & model8.1$ymax > 0, "red", "grey")) + theme_bw()  + coord_flip()  + xlab('Variables') + ylab('') + geom_hline(yintercept = 0, color = "red") + labs(title = "Model3: Coefficients and 95% Confidence Interval")
+p8
+```
+
+## 4.9 Abridged Model Hypothesis Testing Summary
+
+The abridged models above shows that except model5's "state NC" variable, the rest are all sigficant at 95% CI level.  
+
+
+## 4.10 ANOVA Analysis
+
+```{r}
+an1<-anova(model2,model6,model7)
+kable(an1)
+```
+
+```{r}
+an2<-anova(model3,model6,model7)
+kable(an2)
+```
+
+```{r}
+an3<-anova(model2,model6,model3)
+kable(an3)
+```
+
+```{r}
+an4<-anova(model2,model3,model7)
+kable(an4)
+```
+
+The anova analysis presents that relatively Model 2 and Model 3 are proper here in regards with the cross validation, especially for Model2
+
+
+### 4.11 Validation summary
+
+#### In the validation and test of the my development has addressed the following issues:
+
+>* The stepwise process of full model1 to the multi-level effect model4
+>* The hypothesis testing of the coefficients of model1, model2, model3 and model4 respectively
+>* The abridged full model 5 and the stepwise selection of the model 6, model 7 and model8
+>* ANOVA analysis of certain models (see appedix for further information)
+
+
+## V. Discussion
+
+### 5.1 General Findings
+
+>* For restaurant style, comparing with Chinese restaurant as baseline, Japanese restaurant has a stars rating higher than Chinese
+
+>* For TV variable, the regression models show that "with TV" increases the stars compared to restaurants without TV.
+
+>* For "with out-seating" variable, the three model, consistently shows that it has the very small influence towards restaurant rating. 
+
+>* For the "noise level", the baseline is quiet level, the coefficients of the models present that some kind of louder noise level could lead to having higher rating comparing with quiet level restaurant; however, the very loud noise has an apparent negative influence towards the restaurant rating: the very-loud noise level decreases the rating.
+
+>* For alcohol variable with baseline "beer_and_wine", restaurants with bar leads to the decreased rating comparing with beer_and_wine; non-alcohol could increase rating comparing with beer_and_wine.
+
+>* For variable smoking with baseline "no-smoking",both outdoor and "could smoking" leads to the decrease of rating, comparing with "no-smoking". Smoking has a negative influence on restaurant rating. 
+
+>* Different states have influnece to the 
+
+### 5.2 Further Discussion
+
+>* The relationship between the restaurant's features and the consumer's rating behavior on the Yelp platform is a complex issue. I provide the prototype of the rating behavior and the restaurants via the multi-level models. I regard the state influence, and the individual random effect. However, the Yelp online platform per se also have the certain influence towards behavior: such as the existing rating influences to the successive rating? 
+
+>* Also, for the individual variance, each consumer has the demographic features that influence the rating. Such as the religious and the restaurant that provided alcohol attitude. 
+
+>* How important and significant is personal income related to business traits such as location, hours, business categories?
+>* How much is spatial environment influence the restaurant reviews, such as location, residents’ income, schools, etc.? Namely, is there any third variable (i.e., ethnicity, gender, education, income) that influence the consumption and the review? 
+>* When controlling the confounding variables, how large are location influences the review traits based on a multivariate analysis? These specific statistics questions influnced the evaluation of the rating and Yelp users. 
+
+
+# Appendix
+
+### Model2
+```{r}
+display(model2)
+```
+
+
+### ANOVA (model2,model6,model7)
+
+```{r}
+an1
+```
+
+### ANOVA (model3,model6,model7)
+
+```{r}
+an2
+```
+
+### ANOVA (model2,model3,model6)
+
+```{r}
+an3
+```
+
+### ANOVA (model2,model3,model7)
+
+```{r}
+an4
+```
+
+# Reference
+
+> Yelp Context and Analytics Reference
+
+* Forbes 2013 https://www.forbes.com/forbes/welcome/?toURL=https://www.forbes.com/sites/hbsworkingknowledge/2013/01/28/how-yelp-could-create-more-accurate-reviews/&refURL=https://www.google.com/&referrer=https://www.google.com/
+
+* German, Andrew, and Jennifer Hill. "Data analysis using regression and multilevel/hierarchical models (analytical methods for social research)." (2006).
+
+* HBS Working Knowledge https://www.forbes.com/sites/hbsworkingknowledge/#10fee2b230b7
+
+* Luca, Michael, and Georgios Zervas. "Fake it till you make it: Reputation, competition, and Yelp review fraud." Management Science 62, no. 12 (2016): 3412-3427.
+
+* Naatus, Mary Kate. "The Yelp Effect: Impact of Online Reputation in the Digital Era." International Journal of Business & Applied Sciences (2014): 49.
+
+
+> Code reference
+
+* https://github.com/yolanda93/yelp_challenge_ui
+* https://www.datacamp.com/community/blog/r-yelp-and-the-search-for-good-indian-food-an-open-course
+* https://github.com/timjurka/sentiment/blob/master/sentiment/R/classify_emotion.R
+* https://github.com/XIANG-Z/Yelp-Challenge.git
+* https://github.com/juliasilge/tidytext/
+* http://minimaxir.com/2015/12/lets-code-1/
+
+
